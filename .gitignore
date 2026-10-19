@@ -1,0 +1,5 @@
+.env
+last_uid.tmp
+bot.log
+__pycache__/
+.venv/

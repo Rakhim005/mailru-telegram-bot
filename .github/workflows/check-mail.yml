@@ -1,0 +1,60 @@
+# Проверка почты Mail.ru по расписанию и пересылка новых писем в Telegram.
+# Секреты задаются в Settings → Secrets and variables → Actions.
+
+name: Проверка почты
+
+on:
+  schedule:
+    # Каждые 5 минут (минимум для GitHub). GitHub может запускать с задержкой.
+    - cron: "*/5 * * * *"
+  # Кнопка «Run workflow» для ручного запуска
+  workflow_dispatch:
+
+# Не запускать две проверки одновременно, чтобы не было дублей
+concurrency:
+  group: check-mail
+  cancel-in-progress: false
+
+# Нужно, чтобы сохранять last_uid.txt обратно в репозиторий
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Установить Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Установить зависимости
+        run: pip install -r requirements.txt
+
+      - name: Проверить почту
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MAILRU_USER: ${{ secrets.MAILRU_USER }}
+          MAILRU_APP_PASSWORD: ${{ secrets.MAILRU_APP_PASSWORD }}
+        run: python bot.py --once
+
+      # Сохраняем UID даже при ошибке: часть писем могла уже уйти в Telegram
+      - name: Сохранить last_uid.txt
+        if: always()
+        run: |
+          if git diff --quiet -- last_uid.txt && git ls-files --error-unmatch last_uid.txt >/dev/null 2>&1; then
+            echo "Новых писем не было, сохранять нечего."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add last_uid.txt
+          git commit -m "Обновить last_uid.txt"
+          git pull --rebase
+          git push
